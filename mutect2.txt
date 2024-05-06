@@ -37,15 +37,19 @@ gatk LearnReadOrientationModel -I f1r2.tar.gz -O read-orientation-model.tar.gz
 
 # Run GetPileupSummaries (need to do for each samples individually)
 
-gatk GetPileupSummaries -I ~/files/SRR21721948/bam/SRR21721948_sorted_dedup_bqsr_reads.bam -I ~/files/SRR21721949/bam/SRR21721949_sorted_dedup_bqsr_reads.bam -V ~/gatk_res/exac_common/small_exac_common_3.hg38.vcf.gz -L ~/gatk_res/exac_common/small_exac_common_3.hg38.vcf.gz -O ~/files/somatics_variant/getpileupsummaries.table
+gatk GetPileupSummaries -I ~/WES/samples/SRR7138406/SRR7138406_sorted_dedup_bqsr_reads.bam -V ~/gatk_res/exac_common/small_exac_common_3.hg38.vcf.gz -L ~/gatk_res/exac_common/small_exac_common_3.hg38.vcf.gz -O ~/WES/somatic/getpileupsummaries_1.table
+
 
 #calculate contamination (1 case vs control for all cases)
 
-  gatk CalculateContamination -I tumor-pileups.table -tumor-segmentation ~/files/somatics_variant/segments2.table -matched normal-pileups.table -O contamination.table
+gatk CalculateContamination -I ~/WES/somatic/getpileupsummaries_1.table -tumor-segmentation ~/WES/somatic/segments.table -matched ~/WES/somatic/getpileupsummaries_2.table -O ~/WES/somatic/contamination.table
+
 
 # filter mutation
 
-gatk FilterMutectCalls -R ~/hgenome/hg38.fa -V ~/files/somatics_variant/somatic.vcf --tumor-segmentation ~/files/somatics_variant/segments.table --tumor-segmentation ~/files/somatics_variant/segments2.table --contamination-table ~/files/somatics_variant/contamination.table --cotamination-table ~/files/somatics_variant/contamination2.table -O ~/files/somatics_variant/filtered.vcf
+
+gatk --java-options "-Djava.io.tmpdir=. -XX:ParallelGCThreads=500" FilterMutectCalls -R ~/hgenome/hg38.fa -V ~/WES/somatic/somatic_406_414.vcf.gz --tumor-segmentation ~/WES/somatic/segments.table --contamination-table ~/WES/somatic/contamination.table -O ~/WES/somatic/filtered.vcf
+
 
 # variant annotation
 
@@ -54,6 +58,6 @@ gatk Funcotator -R ~/hgenome/hg38.fa -V ~/files/somatics_variant/filtered.vcf -O
 
 
 # annotation with annovar
-
+ convert2annovar.pl -format vcf4 example/ex2.vcf -outfile ex2 -allsample -include -withfreq -comment
 
  perl table_annovar.pl sample/ex2.avinput humandb/ -buildver hg38 -out sample/tm -remove -protocol refGene,cytoBand,exac03,avsnp150,dbnsfp42c -operation gx,r,f,f,f -nastring NA
