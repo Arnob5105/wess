@@ -1,63 +1,67 @@
-#SRA download
+#### SRA download
 ./sratoolkit.3.1.0-centos_linux64/bin/prefetch --progress SRR24885753 -O ~/path
 
-#  Fastq file dump
+####  Fastq file dump
 
 ./sratoolkit.3.1.0-centos_linux64/bin/fasterq-dump --progress -e 40 ~/WES/samples/SRR7138406/SRR7138406.sra
 
 
 
-# gatk mutect 2 full workflow
+#### gatk mutect 2 full workflow
 
-#java options
+#### java options
 
---java-options "-Djava.io.tmpdir=. -XX:ParallelGCThreads=64"   --native-pair-hmm-threads 20
+--java-options "-Djava.io.tmpdir=. -XX:ParallelGCThreads=32"   --native-pair-hmm-threads 20
 
-# alignment
+#### alignment
 
-bwa mem -t 64 -R "@RG\tID:SRR21721949\tPL:ILLUMINA\tSM:SRR21721949" ~/hgenome/hg38.fa ~/files/SRR21721949/dump/SRR21721949_1.fastq ~/files/SRR21721949/dump/SRR21721949_2.fastq > ~/files/SRR21721949/bwa/SRR21721949.paired.sam
+bwa mem -t 32 -R "@RG\tID:SRR7138418\tPL:ILLUMINA\tSM:SRR7138418" ~/hgenome/hg38.fa ~/WES/samples/SRR7138418/SRR7138418_1.fastq ~/WES/samples/SRR7138418/SRR7138418_2.fastq > ~/WES/samples/SRR7138418/SRR7138418.paired.sam
 
-# mark duplicate reads
+
+#### mark duplicate reads
 
 gatk --java-options "-Djava.io.tmpdir=. -XX:ParallelGCThreads=64"  MarkDuplicatesSpark -I ~/files/SRR21721949/bwa/SRR21721949.paired.sam -O ~/files/SRR21721949/bam/SRR21721949_sorted_dedup_reads.bam
 
-# recal table and apply base quality
+#### recal table and apply base quality
 
-gatk BaseRecalibrator -I ~/files/SRR21721949/bam/SRR21721949_sorted_dedup_reads.bam -R ~/hgenome/hg38.fa --known-sites ~/hgenome/dbsnp/Homo_sapiens_assembly38.dbsnp138.vcf -O ~/files/SRR21721949/bam/recal_data.table
+gatk BaseRecalibrator --java-options "-Djava.io.tmpdir=. -XX:ParallelGCThreads=32"  -I ~/WES/samples/SRR7138422/SRR7138422_sorted_dedup_reads.bam -R ~/hgenome/hg38.fa --known-sites ~/hgenome/dbsnp/Homo_sapiens_assembly38.dbsnp138.vcf -O ~/WES/samples/SRR7138422/recal.table
+
 
 gatk ApplyBQSR -I ~/files/SRR21721959/bam/SRR21721959_sorted_dedup_reads.bam -R ~/hgenome/hg38.fa --bqsr-recal-file ~/files/SRR21721959/bam/recal_data.table -O ~/files/SRR21721959/bam/SRR21721959_sorted_dedup_bqsr_reads.bam
 
-# Somatic variant calling
+#### Somatic variant calling
 
 gatk --java-options "-Djava.io.tmpdir=. -XX:ParallelGCThreads=64" Mutect2 -R ~/hgenome/hg38.fa -I ~/files/SRR21721948/bam/SRR21721948_sorted_dedup_bqsr_reads.bam -I ~/files/SRR21721949/bam/SRR21721949_sorted_dedup_bqsr_reads.bam -I ~/files/SRR21721959/bam/SRR21721959_sorted_dedup_bqsr_reads.bam -normal SRR21721959_sorted_dedup_bqsr_reads --germline-resource ~/gatk_res/germline_res/af-only-gnomad.hg38.vcf.gz --panel-of-normals ~/gatk_res/pon/1000g_pon.hg38.vcf.gz --f1r2-tar-gz f1r2.tar.gz -O ~/files/somatics_variant/somatic.vcf.gz
 
-# orientation model
+#### orientation model
  
 gatk LearnReadOrientationModel -I f1r2.tar.gz -O read-orientation-model.tar.gz
 
-# Run GetPileupSummaries (need to do for each samples individually)
+#### Run GetPileupSummaries (need to do for each samples (case & control) individually)
 
 gatk GetPileupSummaries -I ~/WES/samples/SRR7138406/SRR7138406_sorted_dedup_bqsr_reads.bam -V ~/gatk_res/exac_common/small_exac_common_3.hg38.vcf.gz -L ~/gatk_res/exac_common/small_exac_common_3.hg38.vcf.gz -O ~/WES/somatic/getpileupsummaries_1.table
 
 
-#calculate contamination (1 case vs control for all cases)
+#### calculate contamination (using 2 pileupsummeries from previous step)
 
 gatk CalculateContamination -I ~/WES/somatic/getpileupsummaries_1.table -tumor-segmentation ~/WES/somatic/segments.table -matched ~/WES/somatic/getpileupsummaries_2.table -O ~/WES/somatic/contamination.table
 
 
-# filter mutation
+#### filter mutation
 
 
 gatk --java-options "-Djava.io.tmpdir=. -XX:ParallelGCThreads=500" FilterMutectCalls -R ~/hgenome/hg38.fa -V ~/WES/somatic/somatic_406_414.vcf.gz --tumor-segmentation ~/WES/somatic/segments.table --contamination-table ~/WES/somatic/contamination.table -O ~/WES/somatic/filtered.vcf
 
 
-# variant annotation
-
-gatk Funcotator -R ~/hgenome/hg38.fa -V ~/files/somatics_variant/filtered.vcf -O ~/files/somatics_variant/filtered_maf.maf --output-file-format MAF --data-sources-path ~/varfunc/funcotator_dataSources.v1.7.20200521s --ref-version hg38
+#### variant annotation
 
 
 
-# annotation with annovar
- convert2annovar.pl -format vcf4 example/ex2.vcf -outfile ex2 -allsample -include -withfreq -comment
+gatk Funcotator -R ~/hgenome/hg38.fa -V ~/WES/somatic/filtered.vcf -O ~/WES/somatic/filtered_maf.maf --output-file-format MAF --data-sources-path ~/varfunc/funcotator_dataSources.v1.7.20200521s --ref-version hg38
 
- perl table_annovar.pl sample/ex2.avinput humandb/ -buildver hg38 -out sample/tm -remove -protocol refGene,cytoBand,exac03,avsnp150,dbnsfp42c -operation gx,r,f,f,f -nastring NA
+
+#### annotation with annovar
+
+perl convert2annovar.pl -format vcf4 ~/WES/somatic/tumor_only.vcf.gz -outfile ~/WES/somatic/ex2.avinput -allsample -include -withfreq -comment
+
+perl table_annovar.pl sample/ex2.avinput humandb/ -buildver hg38 -out sample/tm -remove -protocol refGene,cytoBand,exac03,avsnp150,dbnsfp42c -operation gx,r,f,f,f -nastring NA
