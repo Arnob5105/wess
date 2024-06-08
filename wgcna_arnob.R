@@ -15,7 +15,7 @@ library(preprocessCore)
 
 ## loading data
 
-data <- read.csv('F:/WES/CGGA/gbm_only.csv',row.names = 1,header = TRUE, sep = ",")
+data <- read.csv('F:/WES/CGGA/gbm_case_control.csv',row.names = 1,header = TRUE, sep = ",")
 which(duplicated(data$gene_name) == TRUE)
 #data <- normalize.quantiles(as.matrix(data))
 dev.new(width=3+ncol(data)/6, height=5)
@@ -62,18 +62,21 @@ ggplot(pca.dat, aes(PC1, PC2))+
 
 # pheno data
 
-coldata <- read.csv('F:/WES/CGGA/clinical_new.csv',row.names = 1,header = TRUE, sep = ",")
+coldata <- read.csv('F:/WES/CGGA/clinical_case_control.csv',row.names = 1,header = TRUE, sep = ",")
 all(row.names(coldata)) %in% colnames(data)
 all(row.names(coldata)) == colnames(data)
 
 # DEseq2 matrix
+library(DESeq2)
 dds <- DESeqDataSetFromMatrix(countData = data,
                               colData = coldata,
                               design = ~1)
 
-dds75 <- dds[rowSums(counts(dds)> 15) > 50,]
+## remove all genes with with 0 count more than 75% samples
+
+dds75 <- dds[rowSums(counts(dds)>= 1) >= 62,]
 nrow(dds75)
-write.csv(rownames(dds75@assays@data@listData[["counts"]]), 'lowcount_new.csv')
+write.csv(rownames(dds75@assays@data@listData[["counts"]]), 'lowcount_new_1.csv')
 
 # normalization
 dds_norm <- vst(dds75)
@@ -145,7 +148,7 @@ plot(sft$fitIndices[,1], -sign(sft$fitIndices[,3])*sft$fitIndices[,2],
 text(sft$fitIndices[,1], -sign(sft$fitIndices[,3])*sft$fitIndices[,2],
      labels=powers,cex=cex1,col="red");
 # this line corresponds to using an R^2 cut-off of h
-abline(h=0.83,col="red") 
+abline(h=0.90,col="red") 
 # Mean connectivity as a function of the soft-thresholding power
 plot(sft$fitIndices[,1], sft$fitIndices[,5],
      xlab="Soft Threshold (power)",ylab="Mean Connectivity", type="n",
@@ -154,7 +157,7 @@ text(sft$fitIndices[,1], sft$fitIndices[,5], labels=powers, cex=cex1,col="red")
 dev.off()
 
 power=sft$powerEstimate #4
-soft_power <- 9
+soft_power <- 16
 # Option 1: automatic
 temp_cor <- cor
 cor <- WGCNA::cor
@@ -189,7 +192,7 @@ plotDendroAndColors(net$dendrograms[[1]], cbind(net$unmergedColors, net$colors),
                     guideHang = 0.05)
 
 # option 2 (step by step) 
-power <- 12
+power <- 16
 power = power
 adjacency = adjacency(t(dds_count), power = power)
 TOM = TOMsimilarity(adjacency); # Turn adjacency into topological overlap
@@ -227,7 +230,7 @@ sizeGrWindow(7, 6)
 plot(METree, main = "Clustering of module eigengenes",
      xlab = "", sub = "")
 # Merge close modules
-MEDissThres=0.10
+MEDissThres=0.15
 abline(h=MEDissThres, col = "red")
 merge = mergeCloseModules(t(dds_count), dynamicColors, cutHeight = MEDissThres, verbose = 3) 
 mergedColors = merge$colors  
@@ -243,7 +246,7 @@ dev.off()
 # clinical data
 colData <- coldata
 
-colData = read.csv(file = "meta.csv",header = T, row.names = 1, sep = ',',)
+coldata = read.csv(file = "clinical_case_control.csv",header = T, row.names = 1, sep = ',',)
 
 colData$class <- factor(colData$class, levels = c('control','Case'))
 
@@ -254,7 +257,9 @@ trait <- binarizeCategoricalColumns(colData$class,
 colnames(trait) <- 'condition'
 
 traits <- cbind(colData[-c(1)],trait)
+
 # Define numbers of genes and samples
+
 nSamples <- nrow(t(dds_count))
 nGenes <- ncol(t(dds_count))
 
@@ -274,17 +279,18 @@ heatmap.data <- heatmap.data[,-1 ]
 
 
 CorLevelPlot(heatmap.data,
-             x = names(heatmap.data)[11],
-             y = names(heatmap.data)[1:10],
+             x = names(heatmap.data)[20:28],
+             y = names(heatmap.data)[1:19],
              col = c("blue1", "skyblue", "white", "pink", "red"))
 
 
 sizeGrWindow(10,6)
+
 # Will display correlations and their p-values
 textMatrix =  paste(signif(module.trait.corr, 2), "\n(",
                     signif(module.trait.corr.pvals, 1), ")", sep = "");
 dim(textMatrix) = dim(module.trait.corr)
-pdf("module_trait_glioblastoma.pdf", width = 10, height = 15)
+pdf("module_trait_glioblastoma_2.pdf", width = 10, height = 15)
 par(mar = c(15, 12, 5, 5));
 # Display the correlation values within a heatmap plot
 labeledHeatmap(Matrix = module.trait.corr,
@@ -301,16 +307,18 @@ labeledHeatmap(Matrix = module.trait.corr,
 dev.off()
 
 
+setwd("F:/WES/CGGA/other_modules/")
+
 module.gene.mapping <- as.data.frame(mergedColors)
-module.gene.mapping <- cbind(dds_count[-c(1)],module.gene.mapping)
+module.gene.mapping <- cbind(rownames(dds_count),module.gene.mapping)
 gene <-module.gene.mapping %>% 
-      filter(`mergedColors` == 'MElightgreen') %>% 
-      rownames()
-#write.csv(gene, 'green.csv')
+      filter(`mergedColors` == 'greenyellow') 
+#%>% rownames()
+write.csv(gene, 'magenta.csv')
 
 
-cancer = as.data.frame(coldata);
-names(cancer) = "glioblastoma"
+#cancer = as.data.frame(coldata);
+#names(cancer) = "glioblastoma"
 
 
 modNames = substring(names(mergedMEs), 3)
@@ -322,13 +330,13 @@ MMPvalue = as.data.frame(corPvalueStudent(as.matrix(geneModuleMembership), nSamp
 names(geneModuleMembership) = paste("MM", modNames, sep="");
 names(MMPvalue) = paste("p.MM", modNames, sep="");
 
-geneTraitSignificance = as.data.frame(cor(t(dds_count), cancer, use = "p"));
+geneTraitSignificance = as.data.frame(cor(t(dds_count), coldata, use = "p"));
 GSPvalue = as.data.frame(corPvalueStudent(as.matrix(geneTraitSignificance), nSamples));
 names(geneTraitSignificance) = paste("GS.", names(coldata), sep="");
 names(GSPvalue) = paste("p.GS.", names(coldata), sep="");
 
 
-module = "MElightgreen"
+module = "greenyellow"
 # Rename to moduleColors
 moduleColors = mergedColors
 column = match(module, modNames);
@@ -341,27 +349,29 @@ verboseScatterplot(abs(geneModuleMembership[moduleGenes, column]),
                    ylab = "Gene significance for glioblastoma",
                    main = paste("Module membership vs. gene significance\n"),
                    cex.main = 1.2, cex.lab = 1.2, cex.axis = 1.2, col = "purple")
-abline(h=0.7,col = "black")
-abline(v=0.9,col = "black")
+abline(h=0.4,col = "black")
+abline(v=0.85,col = "black")
 dev.off()
 
 library(dplyr)
 #mm_threshold <- 0.85
 #gs_threshold <- 0.85
-module <-as.data.frame( geneModuleMembership[moduleGenes, column])
+module <-as.data.frame(geneModuleMembership[moduleGenes, column])
 significance <- as.data.frame(geneTraitSignificance[moduleGenes, 1])
 colnames(significance) <- 'sig'
-colnames(module) <- 'MMgreen'
+colnames(module) <- 'membership'
 
 
 binding <- cbind(gene,module,significance)
-rownames(binding) <- gene
+#rownames(binding) <- gene
 
-filter<-  binding %>% filter(  MMgreen > 0.9 & sig < -0.7)
+filter <-  binding %>% filter(membership < -0.85 & sig > 0.4)
 
+row.names(filter) <- filter$`rownames(dds_count)`
 print(rownames(filter))
 view(filter)
+rownames(filter)
 # Filter genes based on module membership and gene significance
 
 # Print the filtered genes
-write.csv(rownames(filter), 'cyan_gs_mm_gene.csv')
+write.csv(rownames(filter), 'greenyellow_MM_GS_-0.85_0.4.csv')

@@ -1,0 +1,46 @@
+#### -------------------------------Download--------------------------------------- ####
+#### Download FASTQ file from NCBI SRA Database and dump it into forword and backword reads
+sratoolkit.3.1.0-centos_linux64/bin/prefetch --progress SRAID -O output_path
+sratoolkit.3.1.0-centos_linux64/bin/fasterq-dump --progress -e N_Threads Path_To_Downloaded_SRA
+
+
+
+
+#### ----------Preprocessing (Need to do for each tumor and normal samples)-------- #### 
+#### Alignment read along reference genome using BWA
+bwa mem -t N_Threads -R "@RG\tID:SRAID\tPL:ILLUMINA\tSM:SRAID" ref_genome.fasta forword_Reads.fastq backword_Reads.fastq > paired_SAM.sam
+
+#### Mark Duplicate Reads
+gatk --java-options "-Djava.io.tmpdir=. -XX:ParallelGCThreads=N_Threads"  MarkDuplicatesSpark -I paired_SAM.sam -O sorted_dedup_reads.bam
+
+#### Recal Table and Base Quality Score Recalibration
+gatk --java-options "-Djava.io.tmpdir=. -XX:ParallelGCThreads=N_Threads" BaseRecalibrator -I sorted_dedup_reads.bam -R ref_genome.fasta --known-sites sites_of_variation.vcf -O recal.table
+
+gatk --java-options "-Djava.io.tmpdir=. -XX:ParallelGCThreads=N_Threads" ApplyBQSR -I sorted_dedup_reads.bam -R ref_genome.fasta --bqsr-recal-file recal.table -O sorted_dedup_bqsr_reads.bam
+
+
+
+
+#### -------------------------Somatic variant calling------------------------------- ####
+gatk  Mutect2 --native-pair-hmm-threads N_Threads -R ref_genome.fasta -I tumor_sorted_dedup_bqsr_reads.bam -I normal_sorted_dedup_bqsr_reads.bam -normal NORMAL_SRAID --germline-resource af-only-gnomad.vcf.gz --panel-of-normals pon.vcf.gz --f1r2-tar-gz f1r2.tar.gz -O somatic.vcf.gz
+
+
+
+#### --------------------------------VCF filtration--------------------------------- ####
+#### Orientation model
+gatk --java-options "-Djava.io.tmpdir=. -XX:ParallelGCThreads=N_Threads" LearnReadOrientationModel -I f1r2.tar.gz -O read-orientation-model.tar.gz
+
+#### GetPileupSummaries (Need to do for each samples (tumor and normal) individually)
+gatk --java-options "-Djava.io.tmpdir=. -XX:ParallelGCThreads=N_Threads" GetPileupSummaries -I sorted_dedup_bqsr_reads.bam -V exac_common.vcf.gz -L exac_common.vcf.gz -O getpileupsummaries.table
+
+
+#### Calculate contamination (using two pileupsummeries from previous step)
+gatk --java-options "-Djava.io.tmpdir=. -XX:ParallelGCThreads=N_Threads" CalculateContamination -I getpileupsummaries_T.table -tumor-segmentation segments.table -matched getpileupsummaries_N.table -O contamination.table
+
+
+#### Final filtration
+gatk --java-options "-Djava.io.tmpdir=. -XX:ParallelGCThreads=N_Threads" FilterMutectCalls -R ref_genome.fasta -V somatic.vcf.gz --tumor-segmentation segments.table --contamination-table contamination.table -O filtered.vcf
+
+
+#### -----------------------------Variant annotation------------------------------- ####
+gatk --java-options "-Djava.io.tmpdir=. -XX:ParallelGCThreads=N_Threads" Funcotator -R ref_genome.fasta -V filtered.vcf -O filtered.maf --output-file-format MAF --data-sources-path funcotator_dataSources.v1.7.20200521s --ref-version ref_version
